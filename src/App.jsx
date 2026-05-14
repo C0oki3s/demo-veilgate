@@ -1,4 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import {
+  FiActivity,
+  FiBox,
+  FiCpu,
+  FiFileText,
+  FiFilter,
+  FiLayers,
+  FiPlay,
+  FiRefreshCw,
+  FiSearch,
+  FiShield,
+  FiShoppingBag,
+  FiTerminal,
+  FiTrash2,
+  FiZap,
+} from "react-icons/fi";
 import { API_BASE, api, connectLive } from "./lib/api";
 
 const VIEWS = {
@@ -7,6 +23,28 @@ const VIEWS = {
   LOGS: "logs",
   CONFIG: "config",
 };
+
+const icons = {
+  store: FiShoppingBag,
+  lab: FiCpu,
+  logs: FiFileText,
+  config: FiShield,
+  search: FiSearch,
+  play: FiPlay,
+  refresh: FiRefreshCw,
+  clear: FiTrash2,
+  terminal: FiTerminal,
+  pulse: FiActivity,
+  filter: FiFilter,
+  layers: FiLayers,
+  perf: FiZap,
+  empty: FiBox,
+};
+
+function Icon({ name }) {
+  const IconComponent = icons[name];
+  return <IconComponent className="icon" aria-hidden="true" />;
+}
 
 function money(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(2)}`;
@@ -19,11 +57,39 @@ function logKey(item, index) {
 function ProductCard({ product }) {
   return (
     <article className="product-card">
-      <p className="product-category">{product.category}</p>
+      <div className="card-topline">
+        <span className="glyph">
+          <Icon name="store" />
+        </span>
+        <p className="product-category">{product.category}</p>
+      </div>
       <h3>{product.name}</h3>
       <p className="muted">{product.description}</p>
       <p className="price">{money(product.price_cents)}</p>
     </article>
+  );
+}
+
+function ProductSkeleton() {
+  return (
+    <article className="product-card skeleton-card" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </article>
+  );
+}
+
+function EmptyState({ title, detail }) {
+  return (
+    <div className="empty-state">
+      <span className="glyph">
+        <Icon name="empty" />
+      </span>
+      <h3>{title}</h3>
+      <p className="muted">{detail}</p>
+    </div>
   );
 }
 
@@ -59,20 +125,28 @@ function App() {
   const [configYaml, setConfigYaml] = useState("Loading...");
   const [statusMsg, setStatusMsg] = useState("");
   const [error, setError] = useState("");
+  const [category, setCategory] = useState("");
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [configLoading, setConfigLoading] = useState(true);
+  const deferredQuery = useDeferredValue(query);
 
   const viewTitle = useMemo(() => {
-    if (view === VIEWS.STORE) return "Products";
+    if (view === VIEWS.STORE) return "Protected Catalog";
     if (view === VIEWS.LAB) return "VeilGate Lab";
-    if (view === VIEWS.LOGS) return "Live Logs";
-    return "VeilGate Config";
+    if (view === VIEWS.LOGS) return "Security Stream";
+    return "Policy Snapshot";
   }, [view]);
 
   async function loadProducts(nextQuery = query) {
+    setProductsLoading(true);
     try {
       const rows = await api.products(nextQuery.trim());
       setProducts(Array.isArray(rows) ? rows : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load products");
+    } finally {
+      setProductsLoading(false);
     }
   }
 
@@ -86,20 +160,26 @@ function App() {
   }
 
   async function loadConfig() {
+    setConfigLoading(true);
     try {
       const data = await api.veilgateConfig();
       setConfigYaml(data.yaml || "No config returned");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load config");
+    } finally {
+      setConfigLoading(false);
     }
   }
 
   async function refreshLogSnapshot(filter = sourceFilter) {
+    setLogsLoading(true);
     try {
       const data = await api.veilgateLogs(filter);
       setLogs(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load logs");
+    } finally {
+      setLogsLoading(false);
     }
   }
 
@@ -146,79 +226,156 @@ function App() {
     return logs.filter((item) => item.source === sourceFilter);
   }, [logs, sourceFilter]);
 
+  const categories = useMemo(() => {
+    return [...new Set(products.map((product) => product.category).filter(Boolean))].sort();
+  }, [products]);
+
+  const visibleProducts = useMemo(() => {
+    const term = deferredQuery.trim().toLowerCase();
+    return products.filter((product) => {
+      const inCategory = category ? product.category === category : true;
+      if (!term) return inCategory;
+      const searchable = [product.name, product.description, product.category].join(" ").toLowerCase();
+      return inCategory && searchable.includes(term);
+    });
+  }, [category, deferredQuery, products]);
+
+  const navItems = [
+    [VIEWS.STORE, "Catalog", "store"],
+    [VIEWS.LAB, "Lab", "lab"],
+    [VIEWS.LOGS, "Stream", "logs"],
+    [VIEWS.CONFIG, "Policy", "config"],
+  ];
+
+  const insightItems = [
+    ["Query refine", `${visibleProducts.length}/${products.length || 0}`, "search"],
+    ["Signals", String(filteredLiveLogs.length), "layers"],
+    ["Motion safe", "on", "perf"],
+  ];
+
+  function changeView(nextView) {
+    if (nextView === view) return;
+    const update = () => setView(nextView);
+    if (document.startViewTransition) {
+      document.startViewTransition(update);
+      return;
+    }
+    update();
+  }
+
   return (
     <div className="page">
       <main className="shell">
         <header className="hero">
-          <div>
-            <p className="eyebrow">VeilGate React Demo</p>
-            <h1>Demo Store + Live Shield Lab</h1>
+          <div className="hero-copy">
+            <p className="eyebrow">VeilGate Demo Workspace</p>
+            <h1>Protected Commerce Traffic, Explained Live</h1>
             <p className="muted">
-              React frontend separated from API backend, with VeilGate in front of traffic.
+              Browse a realistic catalog, generate clean or suspicious traffic, and watch VeilGate score every request.
             </p>
           </div>
-          <p className="muted tiny">
-            API: <code>{API_BASE}</code>
-          </p>
+          <div className="endpoint">
+            <Icon name="terminal" />
+            <span>Protected edge</span>
+            <code>{API_BASE}</code>
+          </div>
           <div className="stats-strip">
-            <span>Products: {stats?.totalProducts ?? "-"}</span>
-            <span>Views: {stats?.totalPageViews ?? "-"}</span>
-            <span>Capture: {stats?.captureEnabled ? "on" : "off"}</span>
+            <span>Catalog items <strong>{stats?.totalProducts ?? "-"}</strong></span>
+            <span>Observed views <strong>{stats?.totalPageViews ?? "-"}</strong></span>
+            <span>Capture <strong>{stats?.captureEnabled ? "on" : "off"}</strong></span>
+          </div>
+          <div className="insight-strip">
+            {insightItems.map(([label, value, icon]) => (
+              <div className="insight-card" key={label}>
+                <Icon name={icon} />
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
           </div>
           <nav className="tabs">
-            <button className={view === VIEWS.STORE ? "active" : ""} onClick={() => setView(VIEWS.STORE)}>
-              Store
-            </button>
-            <button className={view === VIEWS.LAB ? "active" : ""} onClick={() => setView(VIEWS.LAB)}>
-              Lab
-            </button>
-            <button className={view === VIEWS.LOGS ? "active" : ""} onClick={() => setView(VIEWS.LOGS)}>
-              Logs
-            </button>
-            <button className={view === VIEWS.CONFIG ? "active" : ""} onClick={() => setView(VIEWS.CONFIG)}>
-              Config
-            </button>
+            {navItems.map(([key, label, icon]) => (
+              <button key={key} className={view === key ? "active" : ""} onClick={() => changeView(key)}>
+                <Icon name={icon} />
+                {label}
+              </button>
+            ))}
           </nav>
         </header>
 
-        {error ? <p className="notice error">{error}</p> : null}
-        {statusMsg ? <p className="notice">{statusMsg}</p> : null}
+        {error ? <p className="notice error" role="alert">{error}</p> : null}
+        {statusMsg ? <p className="notice" aria-live="polite">{statusMsg}</p> : null}
 
         <section className="panel">
-          <h2>{viewTitle}</h2>
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Control Surface</p>
+              <h2>{viewTitle}</h2>
+            </div>
+            <span className="status-chip">
+              <Icon name="pulse" />
+              Observe mode
+            </span>
+          </div>
 
           {view === VIEWS.STORE ? (
             <>
-              <p className="muted">Seed products from PostgreSQL.</p>
-              <div className="toolbar">
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") loadProducts();
-                  }}
-                />
-                <button onClick={() => loadProducts()}>Search</button>
+              <p className="muted">Search the protected catalog and see how normal browsing traffic appears at the edge.</p>
+              <div className="search-console">
+                <div className="search-main">
+                  <Icon name="search" />
+                  <input
+                    type="search"
+                    placeholder="Search items, categories, descriptions..."
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") loadProducts();
+                    }}
+                  />
+                  <span className="result-count">{visibleProducts.length} results</span>
+                </div>
+                <div className="filter-row">
+                  <button className={category === "" ? "chip active" : "chip"} onClick={() => setCategory("")}>
+                    <Icon name="filter" />
+                    All
+                  </button>
+                  {categories.map((item) => (
+                    <button
+                      className={category === item ? "chip active" : "chip"}
+                      key={item}
+                      onClick={() => setCategory(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                  <button className="secondary sync-button" onClick={() => loadProducts()} disabled={productsLoading}>
+                    <Icon name="refresh" />
+                    {productsLoading ? "Syncing" : "Sync"}
+                  </button>
+                </div>
               </div>
               <div className="product-grid">
-                {products.map((product) => (
-                  <ProductCard key={product.id} product={product} />
-                ))}
+                {productsLoading
+                  ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
+                  : visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
               </div>
+              {!productsLoading && visibleProducts.length === 0 ? (
+                <EmptyState title="No matching items" detail="Refine the query or clear the active filter." />
+              ) : null}
             </>
           ) : null}
 
           {view === VIEWS.LAB ? (
             <>
-              <p className="muted">Generate normal or suspicious probe traffic through VeilGate.</p>
+              <p className="muted">Generate safe and suspicious request patterns to compare VeilGate scoring behavior.</p>
               <div className="toolbar">
                 <select value={profile} onChange={(event) => setProfile(event.target.value)}>
                   <option value="normal">Normal Traffic</option>
                   <option value="suspicious">Suspicious Traffic</option>
                 </select>
                 <button onClick={runProbe} disabled={probeLoading}>
+                  <Icon name="play" />
                   {probeLoading ? "Running..." : "Run Probe"}
                 </button>
               </div>
@@ -227,7 +384,7 @@ function App() {
 
           {view === VIEWS.LOGS ? (
             <>
-              <p className="muted">Real-time event stream plus log snapshot.</p>
+              <p className="muted">Live request decisions, scores, and signals from the protected edge.</p>
               <div className="toolbar">
                 <select
                   value={sourceFilter}
@@ -241,8 +398,12 @@ function App() {
                   <option value="veilgate">VeilGate</option>
                   <option value="app">App</option>
                 </select>
-                <button onClick={() => refreshLogSnapshot()}>Refresh Snapshot</button>
+                <button onClick={() => refreshLogSnapshot()} disabled={logsLoading}>
+                  <Icon name="refresh" />
+                  {logsLoading ? "Refreshing" : "Refresh"}
+                </button>
                 <button className="secondary" onClick={() => setLogs([])}>
+                  <Icon name="clear" />
                   Clear
                 </button>
               </div>
@@ -251,16 +412,22 @@ function App() {
                   <LogRow key={logKey(item, index)} item={item} />
                 ))}
               </div>
+              {!logsLoading && filteredLiveLogs.length === 0 ? (
+                <EmptyState title="No security events" detail="Run a probe or refresh the stream snapshot." />
+              ) : null}
             </>
           ) : null}
 
           {view === VIEWS.CONFIG ? (
             <>
-              <p className="muted">Redacted VeilGate YAML mounted from the backend host.</p>
+              <p className="muted">A redacted policy snapshot showing the active protection posture without exposing secrets.</p>
               <div className="toolbar">
-                <button onClick={loadConfig}>Refresh Config</button>
+                <button onClick={loadConfig} disabled={configLoading}>
+                  <Icon name="refresh" />
+                  {configLoading ? "Refreshing" : "Refresh Policy"}
+                </button>
               </div>
-              <pre>{configYaml}</pre>
+              <pre className={configLoading ? "loading-text" : ""}>{configYaml}</pre>
             </>
           ) : null}
         </section>
