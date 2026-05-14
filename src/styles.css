@@ -659,13 +659,62 @@ pre {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
-  max-height: 430px;
-  overflow: auto;
+  height: clamp(320px, calc(100vh - 320px), 640px);
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background:
     linear-gradient(180deg, #ffffff 0%, #f7f7f5 100%),
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 30px);
   content-visibility: auto;
   contain-intrinsic-size: 430px;
+}
+
+.log-view,
+.stream-feed,
+.mini-log-view,
+.compact-grid,
+pre {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink) transparent;
+}
+
+.log-view::-webkit-scrollbar,
+.stream-feed::-webkit-scrollbar,
+.mini-log-view::-webkit-scrollbar,
+.compact-grid::-webkit-scrollbar,
+pre::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.log-view::-webkit-scrollbar-track,
+.stream-feed::-webkit-scrollbar-track,
+.mini-log-view::-webkit-scrollbar-track,
+.compact-grid::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+}
+
+.log-view::-webkit-scrollbar-thumb,
+.stream-feed::-webkit-scrollbar-thumb,
+.mini-log-view::-webkit-scrollbar-thumb,
+.compact-grid::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2a2a2a 0%, #050505 100%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+
+.log-view::-webkit-scrollbar-thumb:hover,
+.stream-feed::-webkit-scrollbar-thumb:hover,
+.mini-log-view::-webkit-scrollbar-thumb:hover,
+.compact-grid::-webkit-scrollbar-thumb:hover,
+pre::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #050505 0%, #000000 100%);
+  background-clip: padding-box;
 }
 
 .log-row {
@@ -893,7 +942,9 @@ pre {
 
 .stream-feed {
   min-height: 0;
-  overflow: auto;
+  max-height: clamp(280px, calc(100vh - 360px), 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
