@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiActivity,
   FiBox,
@@ -61,6 +61,130 @@ function Icon({ name }) {
   return <IconComponent className="icon" aria-hidden="true" />;
 }
 
+const HERO_PRETEXT = [
+  "Detect AI pentest agents",
+  "Hallucinate fake endpoints",
+  "Tarpit autonomous crawlers",
+  "Burn LLM budget",
+  "Open-source reverse proxy",
+  "Drop-in deployment",
+  "Built for the AI-pentest age",
+];
+
+const HERO_ROTATOR = ["cheaper", "easier", "faster", "trivial"];
+
+function useRotator(words, intervalMs = 2400) {
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState("in");
+  useEffect(() => {
+    const enter = setTimeout(() => setPhase("in"), 0);
+    const exit = setTimeout(() => setPhase("exit"), intervalMs - 500);
+    const swap = setTimeout(() => {
+      setIndex((i) => (i + 1) % words.length);
+      setPhase("in");
+    }, intervalMs);
+    return () => {
+      clearTimeout(enter);
+      clearTimeout(exit);
+      clearTimeout(swap);
+    };
+  }, [index, intervalMs, words.length]);
+  return { word: words[index], phase };
+}
+
+function useCountUp(value, durationMs = 900) {
+  const [display, setDisplay] = useState(typeof value === "number" ? 0 : value);
+  const previous = useRef(0);
+  useEffect(() => {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      setDisplay(value);
+      return undefined;
+    }
+    const start = previous.current;
+    const delta = value - start;
+    if (delta === 0) {
+      setDisplay(value);
+      return undefined;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(start + delta * eased));
+      if (t < 1) raf = requestAnimationFrame(step);
+      else previous.current = value;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, durationMs]);
+  return display;
+}
+
+function useReveal() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root || typeof IntersectionObserver === "undefined") return undefined;
+    const targets = root.querySelectorAll("[data-reveal]");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.12 }
+    );
+    targets.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, []);
+  return ref;
+}
+
+function useTilt() {
+  const onMouseMove = useCallback((event) => {
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const mx = ((event.clientX - rect.left) / rect.width) * 100;
+    const my = ((event.clientY - rect.top) / rect.height) * 100;
+    target.style.setProperty("--mx", `${mx}%`);
+    target.style.setProperty("--my", `${my}%`);
+  }, []);
+  return { onMouseMove };
+}
+
+function CountValue({ value }) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  const isNumber = Number.isFinite(numeric);
+  const animated = useCountUp(isNumber ? numeric : value);
+  return <strong>{isNumber ? animated.toLocaleString() : value}</strong>;
+}
+
+function HeroRotator({ words }) {
+  const { word, phase } = useRotator(words);
+  return (
+    <span className="hero-rotator" aria-live="polite">
+      <span key={word} className={`hero-rotator-word${phase === "exit" ? " exit" : ""}`}>{word}</span>
+    </span>
+  );
+}
+
+function HeroPretext({ items }) {
+  const loop = [...items, ...items];
+  return (
+    <div className="hero-pretext" aria-hidden="true">
+      <div className="hero-pretext-track">
+        {loop.map((item, index) => (
+          <span className="hero-pretext-item" key={`${item}-${index}`}>{item}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function money(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(2)}`;
 }
@@ -74,8 +198,9 @@ function logKey(item, index) {
 }
 
 function ProductCard({ product, onAddToCart }) {
+  const tilt = useTilt();
   return (
-    <Card className="product-card">
+    <Card className="product-card" data-reveal {...tilt}>
       <div className="card-topline">
         <span className="glyph">
           <Icon name="store" />
@@ -111,13 +236,13 @@ function ProductSkeleton() {
 
 function EmptyState({ title, detail }) {
   return (
-    <Card className="empty-state">
+    <div className="empty-state" role="status">
       <span className="glyph">
         <Icon name="empty" />
       </span>
-      <CardTitle>{title}</CardTitle>
-      <CardDescription>{detail}</CardDescription>
-    </Card>
+      <h3 className="ui-card-title">{title}</h3>
+      <p className="ui-card-description">{detail}</p>
+    </div>
   );
 }
 
@@ -164,6 +289,7 @@ function App() {
   const [cart, setCart] = useState([]);
   const [commerceLoading, setCommerceLoading] = useState(false);
   const deferredQuery = useDeferredValue(query);
+  const pageRef = useReveal();
 
   const viewTitle = useMemo(() => {
     if (view === VIEWS.STORE) return "Protected Catalog";
@@ -325,14 +451,13 @@ function App() {
     [VIEWS.CONFIG, "Policy", "config"],
   ];
 
+  const cartTotal = cart.reduce((sum, item) => sum + Number(item.subtotal_cents || 0), 0)
+
   const insightItems = [
     ["Query refine", `${visibleProducts.length}/${products.length || 0}`, "search"],
     ["Signals", String(filteredLiveLogs.length), "layers"],
     ["Cart events", String(cart.length), "cart"],
   ];
-
-  const cartTotal = cart.reduce((sum, item) => sum + Number(item.subtotal_cents || 0), 0)
-  const latestStream = filteredLiveLogs.slice(0, 8)
 
   function changeView(nextView) {
     if (nextView === view) return;
@@ -345,48 +470,69 @@ function App() {
   }
 
   return (
-    <div className="page">
+    <div className="page" ref={pageRef}>
       <main className="shell">
-        <header className="hero">
+        <header className="hero" data-reveal>
+          <HeroPretext items={HERO_PRETEXT} />
           <div className="hero-copy">
-            <p className="eyebrow">VeilGate Demo Workspace</p>
-            <h1>Protected Commerce Traffic, Explained Live</h1>
+            <p className="eyebrow">VeilGate · Tarpit + Deception Proxy</p>
+            <h1>
+              <span className="hero-headline">The cost of attacking you should not be</span>{" "}
+              <HeroRotator words={HERO_ROTATOR} />{" "}
+              <span className="hero-headline">than the cost of defending.</span>
+            </h1>
             <p className="muted">
-              Browse a realistic catalog, generate clean or suspicious traffic, and watch VeilGate score every request.
+              VeilGate is an open-source tarpit + deception proxy that detects AI-driven pentest agents and feeds them a fake application — wasting their LLM budget on hallucinated bugs and prompt-injection payloads while your real app stays untouched.
             </p>
-          </div>
-          <div className="endpoint">
-            <Icon name="terminal" />
-            <span>Protected edge</span>
-            <code>{API_BASE}</code>
+            <div className="hero-cta">
+              <Button onClick={() => changeView(VIEWS.LAB)}>
+                <Icon name="play" />
+                Run a probe
+              </Button>
+              <Button variant="secondary" onClick={() => changeView(VIEWS.CONFIG)}>
+                <Icon name="config" />
+                Read the policy
+              </Button>
+              <div className="endpoint">
+                <Icon name="terminal" />
+                <span>Protected edge</span>
+                <code>{API_BASE}</code>
+              </div>
+            </div>
           </div>
           <div className="commerce-hero-grid">
-            <Card className="commerce-hero-card">
+            <Card className="commerce-hero-card" data-reveal style={{ "--reveal-delay": "60ms" }}>
               <CardHeader>
-                <Badge variant="muted">Today&apos;s edit</Badge>
-                <CardTitle>Signal-safe shopping paths</CardTitle>
-                <CardDescription>Normal traffic now covers browse, signup, login, cart, recommendations, and checkout.</CardDescription>
+                <Badge variant="muted">Detection</Badge>
+                <CardTitle>Spot the autonomous agent</CardTitle>
+                <CardDescription>Identify AI-driven pentesters from request signature, timing, and tooling fingerprints — no allowlist, no captcha, no rules to maintain.</CardDescription>
               </CardHeader>
             </Card>
-            <Card className="commerce-hero-card">
+            <Card className="commerce-hero-card" data-reveal style={{ "--reveal-delay": "140ms" }}>
               <CardHeader>
-                <Badge variant="muted">Edge observability</Badge>
-                <CardTitle>Every action becomes telemetry</CardTitle>
-                <CardDescription>Run commerce actions, then inspect request decisions and scores in the stream.</CardDescription>
+                <Badge variant="muted">Deception</Badge>
+                <CardTitle>Hallucinated attack surface</CardTitle>
+                <CardDescription>Serve a fake application that wastes their LLM tokens on bugs that don&apos;t exist and traps them in prompt-injection canaries.</CardDescription>
               </CardHeader>
             </Card>
           </div>
           <div className="stats-strip">
-            <Card><span>Catalog items <strong>{stats?.totalProducts ?? "-"}</strong></span></Card>
-            <Card><span>Observed views <strong>{stats?.totalPageViews ?? "-"}</strong></span></Card>
-            <Card><span>Capture <strong>{stats?.captureEnabled ? "on" : "off"}</strong></span></Card>
+            <Card data-reveal style={{ "--reveal-delay": "60ms" }}>
+              <span>Catalog items<CountValue value={stats?.totalProducts ?? "-"} /></span>
+            </Card>
+            <Card data-reveal style={{ "--reveal-delay": "140ms" }}>
+              <span>Observed views<CountValue value={stats?.totalPageViews ?? "-"} /></span>
+            </Card>
+            <Card data-reveal style={{ "--reveal-delay": "220ms" }}>
+              <span>Capture<strong>{stats?.captureEnabled ? "on" : "off"}</strong></span>
+            </Card>
           </div>
           <div className="insight-strip">
-            {insightItems.map(([label, value, icon]) => (
-              <Card className="insight-card" key={label}>
+            {insightItems.map(([label, value, icon], index) => (
+              <Card className="insight-card" data-reveal style={{ "--reveal-delay": `${index * 80}ms` }} key={label}>
                 <Icon name={icon} />
                 <span>{label}</span>
-                <strong>{value}</strong>
+                <CountValue value={value} />
               </Card>
             ))}
           </div>
