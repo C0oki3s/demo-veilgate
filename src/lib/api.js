@@ -47,7 +47,30 @@ export function connectLive(onEvent, onError) {
 }
 
 export const api = {
+  session: () => request("/api/session"),
+  offers: () => request("/api/offers"),
   products: (q = "") => request(`/api/products${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  recommendations: () => request("/api/cart/recommendations"),
+  signup: (username, password) =>
+    request("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  login: (username, password) =>
+    request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  addToCart: (productId, quantity = 1) =>
+    request("/api/cart", {
+      method: "POST",
+      body: JSON.stringify({ productId, quantity }),
+    }),
+  checkout: (username, totalCents) =>
+    request("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify({ username, totalCents, paymentMethod: "demo-card" }),
+    }),
   stats: () => request("/api/stats"),
   probe: (profile) =>
     request("/api/lab/probe", {

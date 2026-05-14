@@ -2,19 +2,29 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   FiActivity,
   FiBox,
+  FiCreditCard,
   FiCpu,
   FiFileText,
   FiFilter,
   FiLayers,
+  FiLogIn,
+  FiPackage,
   FiPlay,
   FiRefreshCw,
   FiSearch,
   FiShield,
   FiShoppingBag,
+  FiShoppingCart,
   FiTerminal,
   FiTrash2,
+  FiUserPlus,
   FiZap,
 } from "react-icons/fi";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { Input } from "./components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { API_BASE, api, connectLive } from "./lib/api";
 
 const VIEWS = {
@@ -39,6 +49,11 @@ const icons = {
   layers: FiLayers,
   perf: FiZap,
   empty: FiBox,
+  signup: FiUserPlus,
+  login: FiLogIn,
+  cart: FiShoppingCart,
+  checkout: FiCreditCard,
+  package: FiPackage,
 };
 
 function Icon({ name }) {
@@ -50,63 +65,76 @@ function money(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(2)}`;
 }
 
+function productRating(product) {
+  return (4.4 + ((Number(product.id || 1) % 6) * 0.08)).toFixed(1);
+}
+
 function logKey(item, index) {
   return `${item.ts || "time"}-${item.source || "src"}-${item.path || "path"}-${index}`;
 }
 
-function ProductCard({ product }) {
+function ProductCard({ product, onAddToCart }) {
   return (
-    <article className="product-card">
+    <Card className="product-card">
       <div className="card-topline">
         <span className="glyph">
           <Icon name="store" />
         </span>
-        <p className="product-category">{product.category}</p>
+        <Badge variant="outline">{product.category}</Badge>
       </div>
-      <h3>{product.name}</h3>
-      <p className="muted">{product.description}</p>
-      <p className="price">{money(product.price_cents)}</p>
-    </article>
+      <CardTitle>{product.name}</CardTitle>
+      <CardDescription>{product.description}</CardDescription>
+      <div className="product-meta">
+        <span>{productRating(product)} rating</span>
+        <span>Ships today</span>
+      </div>
+      <div className="product-actions">
+        <p className="price">{money(product.price_cents)}</p>
+        <Button size="icon" onClick={() => onAddToCart(product)} aria-label={`Add ${product.name} to cart`}>
+          <Icon name="cart" />
+        </Button>
+      </div>
+    </Card>
   );
 }
 
 function ProductSkeleton() {
   return (
-    <article className="product-card skeleton-card" aria-hidden="true">
+    <Card className="product-card skeleton-card" aria-hidden="true">
       <span />
       <span />
       <span />
       <span />
-    </article>
+    </Card>
   );
 }
 
 function EmptyState({ title, detail }) {
   return (
-    <div className="empty-state">
+    <Card className="empty-state">
       <span className="glyph">
         <Icon name="empty" />
       </span>
-      <h3>{title}</h3>
-      <p className="muted">{detail}</p>
-    </div>
+      <CardTitle>{title}</CardTitle>
+      <CardDescription>{detail}</CardDescription>
+    </Card>
   );
 }
 
 function LogRow({ item }) {
   const status = item.status || "-";
-  const score = item.score ? ` score=${item.score}` : "";
+  const score = Number(item.score || 0);
 
   return (
     <div className="log-row">
       <div className="log-meta">
-        <span className="pill">{item.source || "app"}</span>
-        <span className="pill">{item.method || "GET"}</span>
+        <Badge variant="muted">{item.source || "app"}</Badge>
+        <Badge variant="outline">{item.method || "GET"}</Badge>
+        <Badge variant={score >= 70 ? "default" : "outline"}>score {score}</Badge>
         <strong>{item.path || "/"}</strong>
       </div>
       <p className="muted">
         status={status} action={item.action || "observed"}
-        {score}
       </p>
       {item.note ? <p className="muted">{item.note}</p> : null}
     </div>
@@ -115,6 +143,7 @@ function LogRow({ item }) {
 
 function App() {
   const [view, setView] = useState(VIEWS.STORE);
+  const [labTab, setLabTab] = useState("traffic");
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState([]);
   const [stats, setStats] = useState(null);
@@ -129,6 +158,11 @@ function App() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(true);
+  const [offers, setOffers] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [shopper, setShopper] = useState({ username: "demo-shopper", password: "demo-passphrase-123" });
+  const [cart, setCart] = useState([]);
+  const [commerceLoading, setCommerceLoading] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
   const viewTitle = useMemo(() => {
@@ -156,6 +190,16 @@ function App() {
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load stats");
+    }
+  }
+
+  async function loadCommerce() {
+    try {
+      const [offerData, recommendationData] = await Promise.all([api.offers(), api.recommendations()])
+      setOffers(Array.isArray(offerData.items) ? offerData.items : [])
+      setRecommendations(Array.isArray(recommendationData.items) ? recommendationData.items : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load commerce demo")
     }
   }
 
@@ -200,9 +244,43 @@ function App() {
     }
   }
 
+  async function runCommerceAction(kind, product = null) {
+    setCommerceLoading(true)
+    setError("")
+    setStatusMsg("")
+    try {
+      if (kind === "signup") {
+        await api.signup(shopper.username, shopper.password)
+        setStatusMsg(`Created demo shopper "${shopper.username}"`)
+      }
+      if (kind === "login") {
+        await api.login(shopper.username, shopper.password)
+        setStatusMsg(`Started shopper session for "${shopper.username}"`)
+      }
+      if (kind === "cart") {
+        const target = product || visibleProducts[0] || products[0]
+        if (!target) throw new Error("No catalog item available")
+        const item = await api.addToCart(target.id, 1)
+        setCart((prev) => [item, ...prev].slice(0, 6))
+        setStatusMsg(`Added ${target.name} to the demo cart`)
+      }
+      if (kind === "checkout") {
+        const total = cart.reduce((sum, item) => sum + Number(item.subtotal_cents || 0), 0) || 4999
+        const order = await api.checkout(shopper.username, total)
+        setStatusMsg(`Checkout accepted: ${order.orderId}`)
+      }
+      await loadStats()
+      await refreshLogSnapshot()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Commerce action failed")
+    } finally {
+      setCommerceLoading(false)
+    }
+  }
+
   useEffect(() => {
     setError("");
-    Promise.all([loadProducts(""), loadStats(), loadConfig(), refreshLogSnapshot("")]).catch(() => {});
+    Promise.all([loadProducts(""), loadStats(), loadConfig(), loadCommerce(), refreshLogSnapshot("")]).catch(() => {});
 
     const stream = connectLive((event) => {
       setLogs((prev) => {
@@ -250,8 +328,11 @@ function App() {
   const insightItems = [
     ["Query refine", `${visibleProducts.length}/${products.length || 0}`, "search"],
     ["Signals", String(filteredLiveLogs.length), "layers"],
-    ["Motion safe", "on", "perf"],
+    ["Cart events", String(cart.length), "cart"],
   ];
+
+  const cartTotal = cart.reduce((sum, item) => sum + Number(item.subtotal_cents || 0), 0)
+  const latestStream = filteredLiveLogs.slice(0, 8)
 
   function changeView(nextView) {
     if (nextView === view) return;
@@ -279,105 +360,284 @@ function App() {
             <span>Protected edge</span>
             <code>{API_BASE}</code>
           </div>
+          <div className="commerce-hero-grid">
+            <Card className="commerce-hero-card">
+              <CardHeader>
+                <Badge variant="muted">Today&apos;s edit</Badge>
+                <CardTitle>Signal-safe shopping paths</CardTitle>
+                <CardDescription>Normal traffic now covers browse, signup, login, cart, recommendations, and checkout.</CardDescription>
+              </CardHeader>
+            </Card>
+            <Card className="commerce-hero-card">
+              <CardHeader>
+                <Badge variant="muted">Edge observability</Badge>
+                <CardTitle>Every action becomes telemetry</CardTitle>
+                <CardDescription>Run commerce actions, then inspect request decisions and scores in the stream.</CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
           <div className="stats-strip">
-            <span>Catalog items <strong>{stats?.totalProducts ?? "-"}</strong></span>
-            <span>Observed views <strong>{stats?.totalPageViews ?? "-"}</strong></span>
-            <span>Capture <strong>{stats?.captureEnabled ? "on" : "off"}</strong></span>
+            <Card><span>Catalog items <strong>{stats?.totalProducts ?? "-"}</strong></span></Card>
+            <Card><span>Observed views <strong>{stats?.totalPageViews ?? "-"}</strong></span></Card>
+            <Card><span>Capture <strong>{stats?.captureEnabled ? "on" : "off"}</strong></span></Card>
           </div>
           <div className="insight-strip">
             {insightItems.map(([label, value, icon]) => (
-              <div className="insight-card" key={label}>
+              <Card className="insight-card" key={label}>
                 <Icon name={icon} />
                 <span>{label}</span>
                 <strong>{value}</strong>
-              </div>
+              </Card>
             ))}
           </div>
-          <nav className="tabs">
-            {navItems.map(([key, label, icon]) => (
-              <button key={key} className={view === key ? "active" : ""} onClick={() => changeView(key)}>
-                <Icon name={icon} />
-                {label}
-              </button>
-            ))}
-          </nav>
+          <Tabs>
+            <TabsList>
+              {navItems.map(([key, label, icon]) => (
+                <TabsTrigger key={key} active={view === key} onClick={() => changeView(key)}>
+                  <Icon name={icon} />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </header>
 
         {error ? <p className="notice error" role="alert">{error}</p> : null}
         {statusMsg ? <p className="notice" aria-live="polite">{statusMsg}</p> : null}
 
-        <section className="panel">
+        <Card className="panel">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Control Surface</p>
               <h2>{viewTitle}</h2>
             </div>
-            <span className="status-chip">
+            <Badge variant="outline" className="status-chip">
               <Icon name="pulse" />
               Observe mode
-            </span>
+            </Badge>
           </div>
 
           {view === VIEWS.STORE ? (
             <>
               <p className="muted">Search the protected catalog and see how normal browsing traffic appears at the edge.</p>
-              <div className="search-console">
-                <div className="search-main">
-                  <Icon name="search" />
-                  <input
-                    type="search"
-                    placeholder="Search items, categories, descriptions..."
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") loadProducts();
-                    }}
-                  />
-                  <span className="result-count">{visibleProducts.length} results</span>
-                </div>
-                <div className="filter-row">
-                  <button className={category === "" ? "chip active" : "chip"} onClick={() => setCategory("")}>
-                    <Icon name="filter" />
-                    All
-                  </button>
-                  {categories.map((item) => (
-                    <button
-                      className={category === item ? "chip active" : "chip"}
-                      key={item}
-                      onClick={() => setCategory(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                  <button className="secondary sync-button" onClick={() => loadProducts()} disabled={productsLoading}>
-                    <Icon name="refresh" />
-                    {productsLoading ? "Syncing" : "Sync"}
-                  </button>
-                </div>
+              <div className="catalog-full-split">
+                <section className="catalog-flow-pane">
+                  <div className="search-console">
+                    <div className="search-main">
+                      <Icon name="search" />
+                      <Input
+                        type="search"
+                        placeholder="Search items, categories, descriptions..."
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") loadProducts();
+                        }}
+                      />
+                      <span className="result-count">{visibleProducts.length} results</span>
+                    </div>
+                    <div className="filter-row">
+                      <Button variant="chip" className={category === "" ? "is-active" : ""} onClick={() => setCategory("")}>
+                        <Icon name="filter" />
+                        All
+                      </Button>
+                      {categories.map((item) => (
+                        <Button
+                          variant="chip"
+                          className={category === item ? "is-active" : ""}
+                          key={item}
+                          onClick={() => setCategory(item)}
+                        >
+                          {item}
+                        </Button>
+                      ))}
+                      <Button variant="secondary" className="sync-button" onClick={() => loadProducts()} disabled={productsLoading}>
+                        <Icon name="refresh" />
+                        {productsLoading ? "Syncing" : "Sync"}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="product-grid compact-grid">
+                    {productsLoading
+                      ? Array.from({ length: 4 }, (_, index) => <ProductSkeleton key={index} />)
+                      : visibleProducts.map((product) => (
+                          <ProductCard key={product.id} product={product} onAddToCart={() => runCommerceAction("cart", product)} />
+                        ))}
+                  </div>
+                  {!productsLoading && visibleProducts.length === 0 ? (
+                    <EmptyState title="No matching items" detail="Refine the query or clear the active filter." />
+                  ) : null}
+
+                  <div className="flow-stack">
+                    <Card className="commerce-panel account-panel">
+                      <CardHeader className="mini-heading">
+                        <Icon name="signup" />
+                        <div>
+                          <CardTitle>Shopper Flow</CardTitle>
+                          <CardDescription>Run normal commerce actions while the edge feed stays visible.</CardDescription>
+                        </div>
+                      </CardHeader>
+                      <div className="account-grid">
+                        <Input
+                          aria-label="Demo username"
+                          value={shopper.username}
+                          onChange={(event) => setShopper((prev) => ({ ...prev, username: event.target.value }))}
+                        />
+                        <Input
+                          aria-label="Demo password"
+                          type="password"
+                          value={shopper.password}
+                          onChange={(event) => setShopper((prev) => ({ ...prev, password: event.target.value }))}
+                        />
+                      </div>
+                      <div className="commerce-actions">
+                        <Button onClick={() => runCommerceAction("signup")} disabled={commerceLoading}>
+                          <Icon name="signup" />
+                          Signup
+                        </Button>
+                        <Button onClick={() => runCommerceAction("login")} disabled={commerceLoading}>
+                          <Icon name="login" />
+                          Login
+                        </Button>
+                        <Button onClick={() => runCommerceAction("cart")} disabled={commerceLoading}>
+                          <Icon name="cart" />
+                          Add Item
+                        </Button>
+                        <Button onClick={() => runCommerceAction("checkout")} disabled={commerceLoading}>
+                          <Icon name="checkout" />
+                          Checkout
+                        </Button>
+                      </div>
+                    </Card>
+
+                    <Card className="cart-mini-panel">
+                      <CardHeader className="mini-heading">
+                        <Icon name="cart" />
+                        <div>
+                          <CardTitle>Cart Snapshot</CardTitle>
+                          <CardDescription>{cart.length ? `${cart.length} event(s), ${money(cartTotal)}` : "No cart events yet."}</CardDescription>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  </div>
+                </section>
+
+                <section className="catalog-log-pane">
+                  <Card className="stream-inspector-card catalog-inspector-card">
+                    <CardHeader className="stream-header">
+                      <div>
+                        <Badge variant="outline">Live logs</Badge>
+                        <CardTitle>Catalog flow telemetry</CardTitle>
+                        <CardDescription>Browse, signup, login, cart, and checkout events stream here in real time.</CardDescription>
+                      </div>
+                      <Badge variant="muted">{filteredLiveLogs.length} events</Badge>
+                    </CardHeader>
+                    <div className="catalog-log-controls">
+                      <select
+                        value={sourceFilter}
+                        onChange={async (event) => {
+                          const next = event.target.value;
+                          setSourceFilter(next);
+                          await refreshLogSnapshot(next);
+                        }}
+                      >
+                        <option value="">All Sources</option>
+                        <option value="veilgate">VeilGate</option>
+                        <option value="app">App</option>
+                      </select>
+                      <Button variant="secondary" onClick={() => refreshLogSnapshot()} disabled={logsLoading}>
+                        <Icon name="refresh" />
+                        {logsLoading ? "Refreshing" : "Refresh"}
+                      </Button>
+                    </div>
+                    <div className="stream-feed">
+                      {filteredLiveLogs.map((item, index) => (
+                        <LogRow key={logKey(item, index)} item={item} />
+                      ))}
+                      {!logsLoading && filteredLiveLogs.length === 0 ? (
+                        <EmptyState title="No stream events yet" detail="Search, add to cart, or run a shopper flow action." />
+                      ) : null}
+                    </div>
+                  </Card>
+                </section>
               </div>
-              <div className="product-grid">
-                {productsLoading
-                  ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
-                  : visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
-              </div>
-              {!productsLoading && visibleProducts.length === 0 ? (
-                <EmptyState title="No matching items" detail="Refine the query or clear the active filter." />
-              ) : null}
             </>
           ) : null}
 
           {view === VIEWS.LAB ? (
             <>
               <p className="muted">Generate safe and suspicious request patterns to compare VeilGate scoring behavior.</p>
-              <div className="toolbar">
-                <select value={profile} onChange={(event) => setProfile(event.target.value)}>
-                  <option value="normal">Normal Traffic</option>
-                  <option value="suspicious">Suspicious Traffic</option>
-                </select>
-                <button onClick={runProbe} disabled={probeLoading}>
-                  <Icon name="play" />
-                  {probeLoading ? "Running..." : "Run Probe"}
-                </button>
+              <div className="lab-full-split">
+                <section className="lab-left-pane">
+                  <Card className="lab-command-card">
+                    <CardHeader>
+                      <Badge variant="muted">Probe runner</Badge>
+                      <CardTitle>Generate edge traffic</CardTitle>
+                      <CardDescription>Run normal shopper paths or suspicious request patterns through VeilGate.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <select value={profile} onChange={(event) => setProfile(event.target.value)}>
+                        <option value="normal">Normal Traffic</option>
+                        <option value="suspicious">Suspicious Traffic</option>
+                      </select>
+                      <Button onClick={runProbe} disabled={probeLoading}>
+                        <Icon name="play" />
+                        {probeLoading ? "Running..." : "Run Probe"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="lab-command-card">
+                    <CardHeader>
+                      <Badge variant="muted">Stream inspector</Badge>
+                      <CardTitle>Filter live feed</CardTitle>
+                      <CardDescription>Use source filters without leaving the probe workspace.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <select
+                        value={sourceFilter}
+                        onChange={async (event) => {
+                          const next = event.target.value;
+                          setSourceFilter(next);
+                          await refreshLogSnapshot(next);
+                        }}
+                      >
+                        <option value="">All Sources</option>
+                        <option value="veilgate">VeilGate</option>
+                        <option value="app">App</option>
+                      </select>
+                      <Button onClick={() => refreshLogSnapshot()} disabled={logsLoading}>
+                        <Icon name="refresh" />
+                        {logsLoading ? "Refreshing" : "Refresh Snapshot"}
+                      </Button>
+                      <Button variant="secondary" onClick={() => setLogs([])}>
+                        <Icon name="clear" />
+                        Clear Local Feed
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section className="lab-right-pane">
+                  <Card className="stream-inspector-card">
+                    <CardHeader className="stream-header">
+                      <div>
+                        <Badge variant="outline">SSE connected</Badge>
+                        <CardTitle>Full live log feed</CardTitle>
+                        <CardDescription>Newest-first events from `/api/live` with source, method, score, path, and action.</CardDescription>
+                      </div>
+                      <Badge variant="muted">{filteredLiveLogs.length} events</Badge>
+                    </CardHeader>
+                    <div className="stream-feed">
+                      {filteredLiveLogs.map((item, index) => (
+                        <LogRow key={logKey(item, index)} item={item} />
+                      ))}
+                      {!logsLoading && filteredLiveLogs.length === 0 ? (
+                        <EmptyState title="No stream events yet" detail="Run a probe to populate the live inspector." />
+                      ) : null}
+                    </div>
+                  </Card>
+                </section>
               </div>
             </>
           ) : null}
@@ -398,14 +658,14 @@ function App() {
                   <option value="veilgate">VeilGate</option>
                   <option value="app">App</option>
                 </select>
-                <button onClick={() => refreshLogSnapshot()} disabled={logsLoading}>
+                <Button onClick={() => refreshLogSnapshot()} disabled={logsLoading}>
                   <Icon name="refresh" />
                   {logsLoading ? "Refreshing" : "Refresh"}
-                </button>
-                <button className="secondary" onClick={() => setLogs([])}>
+                </Button>
+                <Button variant="secondary" onClick={() => setLogs([])}>
                   <Icon name="clear" />
                   Clear
-                </button>
+                </Button>
               </div>
               <div className="log-view">
                 {filteredLiveLogs.map((item, index) => (
@@ -422,15 +682,15 @@ function App() {
             <>
               <p className="muted">A redacted policy snapshot showing the active protection posture without exposing secrets.</p>
               <div className="toolbar">
-                <button onClick={loadConfig} disabled={configLoading}>
+                <Button onClick={loadConfig} disabled={configLoading}>
                   <Icon name="refresh" />
                   {configLoading ? "Refreshing" : "Refresh Policy"}
-                </button>
+                </Button>
               </div>
               <pre className={configLoading ? "loading-text" : ""}>{configYaml}</pre>
             </>
           ) : null}
-        </section>
+        </Card>
       </main>
     </div>
   );
