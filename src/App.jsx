@@ -126,7 +126,6 @@ function useReveal() {
   useEffect(() => {
     const root = ref.current;
     if (!root || typeof IntersectionObserver === "undefined") return undefined;
-    const targets = root.querySelectorAll("[data-reveal]");
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -138,8 +137,18 @@ function useReveal() {
       },
       { rootMargin: "0px 0px -10% 0px", threshold: 0.12 }
     );
-    targets.forEach((node) => observer.observe(node));
-    return () => observer.disconnect();
+    const observeAll = () => {
+      root.querySelectorAll("[data-reveal]:not(.is-visible)").forEach((node) => {
+        observer.observe(node);
+      });
+    };
+    observeAll();
+    const mutObs = typeof MutationObserver !== "undefined" ? new MutationObserver(observeAll) : null;
+    if (mutObs) mutObs.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (mutObs) mutObs.disconnect();
+    };
   }, []);
   return ref;
 }
@@ -426,8 +435,12 @@ function App() {
   }, []);
 
   const filteredLiveLogs = useMemo(() => {
-    if (!sourceFilter) return logs;
-    return logs.filter((item) => item.source === sourceFilter);
+    const filtered = sourceFilter ? logs.filter((item) => item.source === sourceFilter) : logs;
+    return [...filtered].sort((a, b) => {
+      const ta = a.ts ? new Date(a.ts).getTime() : 0;
+      const tb = b.ts ? new Date(b.ts).getTime() : 0;
+      return tb - ta;
+    });
   }, [logs, sourceFilter]);
 
   const categories = useMemo(() => {
