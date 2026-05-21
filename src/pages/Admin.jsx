@@ -3,7 +3,8 @@ import { io } from "socket.io-client";
 import { api, money } from "../lib/api";
 import { getToken } from "../lib/auth";
 
-const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
+const SOCKET_URL =
+  import.meta.env.VITE_API_BASE_URL || "https://demo-api.veilgate.dev";
 const SIMULATION_CONCURRENCY = 40;
 const PRODUCT_IDS = [
   "prod_c2",
