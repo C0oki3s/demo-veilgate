@@ -1,7 +1,8 @@
 import { getToken, clearAuth } from "./auth";
 
 export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://localhost:8081" : window.location.origin);
 
 async function request(path, init = {}) {
   const token = getToken();
