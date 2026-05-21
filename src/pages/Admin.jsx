@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api, money } from "../lib/api";
 import { getToken } from "../lib/auth";
+import ShopStormLogPanel from "../components/ShopStormLogPanel";
 
 const SOCKET_URL =
   import.meta.env.VITE_API_BASE_URL || "https://demo-api.veilgate.dev";
@@ -550,6 +551,9 @@ export default function Admin() {
           )}
         </div>
       </div>
+
+      {/* ShopStorm live log stream */}
+      <ShopStormLogPanel />
 
       {/* Info cards */}
       <div className="admin-info-grid">

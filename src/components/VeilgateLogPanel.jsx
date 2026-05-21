@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { API_BASE } from "../lib/api";
+import { io } from "socket.io-client";
+
+const SOCKET_URL =
+  import.meta.env.VITE_API_BASE_URL || "https://demo-api.veilgate.dev";
 
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
-const LOG_BATCH_SIZE = 250;
 
 function cleanLogLine(line) {
   return line.replace(ANSI_PATTERN, "").trim();
@@ -19,11 +21,7 @@ function parseLogLine(line) {
 
   let signals = [];
   if (signalsMatch) {
-    try {
-      signals = JSON.parse(signalsMatch[1]);
-    } catch {
-      signals = [];
-    }
+    try { signals = JSON.parse(signalsMatch[1]); } catch { signals = []; }
   }
 
   return {
@@ -40,9 +38,9 @@ function parseLogLine(line) {
 
 function dedupeLogs(entries) {
   const seen = new Set();
-  return entries.filter((entry) => {
-    if (seen.has(entry.id)) return false;
-    seen.add(entry.id);
+  return entries.filter((e) => {
+    if (seen.has(e.id)) return false;
+    seen.add(e.id);
     return true;
   });
 }
@@ -51,69 +49,34 @@ function formatTime(timestamp) {
   if (!timestamp) return "";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 export default function VeilgateLogPanel() {
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState("connecting");
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [hasOlder, setHasOlder] = useState(true);
   const listRef = useRef(null);
-  const loadingOlderRef = useRef(false);
 
   useEffect(() => {
-    const stream = new EventSource(`${API_BASE}/api/veilgate/logs/stream`);
+    const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
 
-    stream.onopen = () => setStatus("live");
-    stream.onerror = () => setStatus("reconnecting");
-    stream.addEventListener("log", (event) => {
-      const line = event.data || "";
-      if (!line.trim()) return;
-      setLogs((current) => dedupeLogs([parseLogLine(line), ...current]));
+    socket.on("connect", () => setStatus("live"));
+    socket.on("disconnect", () => setStatus("reconnecting"));
+    socket.on("connect_error", () => setStatus("reconnecting"));
+
+    // Bulk history on first connect
+    socket.on("veilgate:log:history", (lines) => {
+      setLogs(dedupeLogs([...lines].reverse().map(parseLogLine)));
     });
 
-    return () => stream.close();
+    // Individual new lines — prepend so newest is on top
+    socket.on("veilgate:log", (line) => {
+      if (!line?.trim()) return;
+      setLogs((prev) => dedupeLogs([parseLogLine(line), ...prev]).slice(0, 500));
+    });
+
+    return () => socket.disconnect();
   }, []);
-
-  async function loadOlderLogs() {
-    if (loadingOlderRef.current || !hasOlder || logs.length === 0) return;
-
-    const oldest = logs[logs.length - 1];
-    if (!oldest?.timestamp) return;
-
-    loadingOlderRef.current = true;
-    setLoadingOlder(true);
-
-    try {
-      const before = new Date(new Date(oldest.timestamp).getTime() - 1).toISOString();
-      const response = await fetch(
-        `${API_BASE}/api/veilgate/logs?limit=${LOG_BATCH_SIZE}&before=${encodeURIComponent(before)}`,
-      );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json();
-      const olderLogs = (body.lines || []).map(parseLogLine).reverse();
-      setHasOlder(olderLogs.length >= LOG_BATCH_SIZE);
-      setLogs((current) => dedupeLogs([...current, ...olderLogs]));
-    } catch {
-      setHasOlder(false);
-    } finally {
-      loadingOlderRef.current = false;
-      setLoadingOlder(false);
-    }
-  }
-
-  function handleLogScroll(event) {
-    const node = event.currentTarget;
-    const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
-    if (remaining < 220) {
-      loadOlderLogs();
-    }
-  }
 
   return (
     <aside className="veilgate-log-panel" aria-label="Veilgate live logs">
@@ -128,7 +91,7 @@ export default function VeilgateLogPanel() {
         </span>
       </div>
 
-      <div className="veilgate-log-list" ref={listRef} onScroll={handleLogScroll}>
+      <div className="veilgate-log-list" ref={listRef}>
         {logs.length === 0 ? (
           <div className="veilgate-empty-log">No log entries yet</div>
         ) : (
@@ -159,8 +122,6 @@ export default function VeilgateLogPanel() {
                 )}
               </article>
             ))}
-            {loadingOlder && <div className="veilgate-empty-log">Loading older logs</div>}
-            {!hasOlder && <div className="veilgate-empty-log">No older logs found</div>}
           </>
         )}
       </div>
