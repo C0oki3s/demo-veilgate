@@ -1,83 +1,115 @@
-function computeDefaultApiBase() {
-  const host = window.location.hostname;
-  const scheme = window.location.protocol;
+import { getToken, clearAuth } from "./auth";
 
-  if (host.endsWith("demo.veilgate.dev")) {
-    return "https://demo-api.veilgate.dev";
-  }
-
-  if (host === "localhost" || host === "127.0.0.1") {
-    return "http://localhost";
-  }
-
-  return `${scheme}//${host}`;
-}
-
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || computeDefaultApiBase();
+export const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
 
 async function request(path, init = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers || {}),
-    },
-    ...init,
-  });
+  const token = getToken();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(init.headers || {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (response.status === 401) {
+    clearAuth();
+    window.location.href = "/login";
+    throw new Error("Authentication required");
+  }
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${response.status}`);
   }
 
   return response.json();
 }
 
-export function connectLive(onEvent, onError) {
-  const eventSource = new EventSource(`${API_BASE}/api/live`);
-  eventSource.onmessage = (event) => {
-    try {
-      onEvent(JSON.parse(event.data));
-    } catch {
-      // ignore malformed event payloads
-    }
-  };
-  eventSource.onerror = () => {
-    if (onError) onError("Live stream disconnected. Trying to reconnect...");
-  };
-  return eventSource;
-}
-
 export const api = {
-  session: () => request("/api/session"),
-  offers: () => request("/api/offers"),
-  products: (q = "") => request(`/api/products${q ? `?q=${encodeURIComponent(q)}` : ""}`),
-  recommendations: () => request("/api/cart/recommendations"),
-  signup: (username, password) =>
-    request("/api/auth/signup", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }),
-  login: (username, password) =>
-    request("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }),
+  // Auth
+  signup: (data) =>
+    request("/api/auth/signup", { method: "POST", body: JSON.stringify(data) }),
+  login: (data) =>
+    request("/api/auth/login", { method: "POST", body: JSON.stringify(data) }),
+  me: () => request("/api/auth/me"),
+
+  // Products
+  products: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
+    ).toString();
+    return request(`/api/products${q ? `?${q}` : ""}`);
+  },
+  featuredProducts: () => request("/api/products/featured"),
+  product: (id) => request(`/api/products/${id}`),
+
+  // Cart
+  cart: () => request("/api/cart"),
   addToCart: (productId, quantity = 1) =>
-    request("/api/cart", {
+    request("/api/cart/items", {
       method: "POST",
       body: JSON.stringify({ productId, quantity }),
     }),
-  checkout: (username, totalCents) =>
-    request("/api/checkout", {
-      method: "POST",
-      body: JSON.stringify({ username, totalCents, paymentMethod: "demo-card" }),
+  updateCartItem: (productId, quantity) =>
+    request(`/api/cart/items/${productId}`, {
+      method: "PUT",
+      body: JSON.stringify({ quantity }),
     }),
-  stats: () => request("/api/stats"),
-  probe: (profile) =>
-    request("/api/lab/probe", {
+  removeCartItem: (productId) =>
+    request(`/api/cart/items/${productId}`, { method: "DELETE" }),
+  clearCart: () => request("/api/cart", { method: "DELETE" }),
+
+  // Orders
+  orders: () => request("/api/orders"),
+  order: (id) => request(`/api/orders/${id}`),
+  createOrder: (data) =>
+    request("/api/orders", { method: "POST", body: JSON.stringify(data) }),
+  cancelOrder: (id) => request(`/api/orders/${id}/cancel`, { method: "PUT" }),
+
+  // Returns
+  returns: () => request("/api/returns"),
+  return_: (id) => request(`/api/returns/${id}`),
+  createReturn: (data) =>
+    request("/api/returns", { method: "POST", body: JSON.stringify(data) }),
+
+  // Support
+  tickets: () => request("/api/support"),
+  ticket: (id) => request(`/api/support/${id}`),
+  createTicket: (data) =>
+    request("/api/support", { method: "POST", body: JSON.stringify(data) }),
+  replyTicket: (id, body) =>
+    request(`/api/support/${id}/reply`, {
       method: "POST",
-      body: JSON.stringify({ profile }),
+      body: JSON.stringify({ body }),
     }),
-  veilgateLogs: (source = "") =>
-    request(`/api/veilgate/logs${source ? `?source=${encodeURIComponent(source)}` : ""}`),
-  veilgateConfig: () => request("/api/veilgate/config"),
+  closeTicket: (id) => request(`/api/support/${id}/close`, { method: "PUT" }),
+
+  // Profile
+  profile: () => request("/api/users/me"),
+  updateProfile: (data) =>
+    request("/api/users/me", { method: "PUT", body: JSON.stringify(data) }),
+  changePassword: (data) =>
+    request("/api/users/me/password", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  // Admin
+  simulationState: () => request("/api/admin/simulation"),
+  startSimulation: (userCount) =>
+    request("/api/admin/simulation/start", {
+      method: "POST",
+      body: JSON.stringify({ userCount }),
+    }),
+  stopSimulation: (data = {}) =>
+    request("/api/admin/simulation/stop", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
+
+export function money(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
