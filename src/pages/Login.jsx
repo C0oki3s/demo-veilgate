@@ -27,8 +27,12 @@ export default function Login() {
     }
   }
 
-  function demoLogin(email) {
-    setForm({ email, password: "Password1!" });
+  function demoLogin(email, password = "Password1!") {
+    setForm({ email, password });
+  }
+
+  function selectAdminLogin() {
+    setForm({ email: "admin@shopstorm.io", password: "" });
   }
 
   return (
@@ -41,11 +45,11 @@ export default function Login() {
         </div>
 
         <div className="demo-hints">
-          <p className="demo-label">Demo accounts (all use Password1!):</p>
+          <p className="demo-label">Demo accounts: customers use Password1!, admin uses Sairohith@9</p>
           <div className="demo-btns">
             <button className="demo-btn" onClick={() => demoLogin("alice@shopstorm.io")}>alice</button>
             <button className="demo-btn" onClick={() => demoLogin("bob@shopstorm.io")}>bob</button>
-            <button className="demo-btn demo-btn-admin" onClick={() => demoLogin("admin@shopstorm.io")}>admin</button>
+            <button className="demo-btn demo-btn-admin" onClick={selectAdminLogin}>admin</button>
           </div>
         </div>
 
