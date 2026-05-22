@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "./styles.css";
 import App from "./App";
-import { init, handleAll } from "@veilgate/client";
+import { init, handleAll, getToken } from "@veilgate/client";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "https://demo-api.veilgate.dev";
@@ -36,6 +36,17 @@ const hideOverlay = () => overlay.classList.remove("vg-pow-visible");
     onChallenge: showOverlay,
     onToken: hideOverlay,
   });
+
+  // Pre-solve PoW so the token is cached before socket.io and API calls fire.
+  // The patched fetch/XHR will attach X-Veilgate-Token on every request.
+  try {
+    showOverlay();
+    await getToken();
+  } catch (_) {
+    // Discovery unavailable or challenge timed out — continue anyway
+  } finally {
+    hideOverlay();
+  }
 
   ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>
