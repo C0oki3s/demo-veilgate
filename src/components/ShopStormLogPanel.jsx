@@ -57,7 +57,7 @@ export default function ShopStormLogPanel() {
   const autoScrollRef = useRef(true);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    const socket = io(SOCKET_URL, { transports: ["polling", "websocket"] });
 
     socket.on("connect", () => setStatus("live"));
     socket.on("disconnect", () => setStatus("reconnecting"));

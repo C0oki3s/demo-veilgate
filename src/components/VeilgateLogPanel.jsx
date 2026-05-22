@@ -58,7 +58,7 @@ export default function VeilgateLogPanel() {
   const listRef = useRef(null);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    const socket = io(SOCKET_URL, { transports: ["polling", "websocket"] });
 
     socket.on("connect", () => setStatus("live"));
     socket.on("disconnect", () => setStatus("reconnecting"));
