@@ -23,31 +23,7 @@ document.body.appendChild(overlay);
 const showOverlay = () => overlay.classList.add("vg-pow-visible");
 const hideOverlay = () => overlay.classList.remove("vg-pow-visible");
 
-// ── Boot: init VeilGate, patch fetch/XHR, then mount React ───────────────────
-(async () => {
-  await init({
-    baseURL: API_BASE,
-    onChallenge: showOverlay,
-    onToken: hideOverlay,
-  });
-
-  handleAll({
-    baseURL: API_BASE,
-    onChallenge: showOverlay,
-    onToken: hideOverlay,
-  });
-
-  // Pre-solve PoW so the token is cached before socket.io and API calls fire.
-  // The patched fetch/XHR will attach X-Veilgate-Token on every request.
-  try {
-    showOverlay();
-    await getToken();
-  } catch (_) {
-    // Discovery unavailable or challenge timed out — continue anyway
-  } finally {
-    hideOverlay();
-  }
-
+function mountApp() {
   ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>
       <BrowserRouter>
@@ -55,4 +31,29 @@ const hideOverlay = () => overlay.classList.remove("vg-pow-visible");
       </BrowserRouter>
     </React.StrictMode>
   );
+}
+
+// ── Boot: init VeilGate, patch fetch/XHR, then mount React ───────────────────
+(async () => {
+  try {
+    await init({
+      baseURL: API_BASE,
+      onChallenge: showOverlay,
+      onToken: hideOverlay,
+    });
+
+    handleAll({
+      baseURL: API_BASE,
+      onChallenge: showOverlay,
+      onToken: hideOverlay,
+    });
+  } catch (_) {
+    // Discovery unavailable — continue with the app and let API calls surface errors.
+  }
+
+  mountApp();
+
+  // Warm the PoW token in the background. This avoids blocking first render
+  // while still preparing socket.io/API calls that need a VeilGate credential.
+  getToken().catch(() => {}).finally(hideOverlay);
 })();
