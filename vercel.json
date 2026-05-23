@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://demo-api.veilgate.dev/api/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
