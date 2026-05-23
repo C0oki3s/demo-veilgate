@@ -1,7 +1,9 @@
 import { getToken, clearAuth } from "./auth";
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://demo-api.veilgate.dev";
+// Relative base so REST calls go through the Vercel proxy rewrite (/api/* →
+// demo-api.veilgate.dev). No cross-origin request means no CORS preflight and
+// no X-Veilgate-Token header that would trigger a 401 from Veilgate.
+export const API_BASE = "";
 
 async function request(path, init = {}) {
   const token = getToken();
