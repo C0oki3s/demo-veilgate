@@ -45,7 +45,7 @@ export default function Login() {
         </div>
 
         <div className="demo-hints">
-          <p className="demo-label">Demo accounts: customers use Password1!, admin uses Sairohith@9</p>
+          <p className="demo-label">Demo accounts: customers use Password1!</p>
           <div className="demo-btns">
             <button className="demo-btn" onClick={() => demoLogin("alice@shopstorm.io")}>alice</button>
             <button className="demo-btn" onClick={() => demoLogin("bob@shopstorm.io")}>bob</button>
